@@ -12,6 +12,7 @@ import numpy as np
 import random
 import csv
 import scipy.stats as stats
+import os
 
 
 
@@ -28,12 +29,13 @@ def Truncated_Norm_gen(lower, mu, sigma):
     return res
 
 class Environment():
-    def __init__(self, Design, group_num):
+    def __init__(self, Design, group_num, iteration):
         self.event_list = []
         self.clock = 0
         self.global_state = 'Initial'
         self.job_gen_count = 0
         self.group_num = group_num
+        self.iteration = iteration
         
         #params
         self.patient_max_num = 20 #4000#5 #10  #maximum number of patients who can come for therapy
@@ -111,10 +113,10 @@ class Environment():
         self.queue_3 = toolbox.Queue('Queue_3', 'Machine_queue')
         self.queue_4 = toolbox.Queue('Queue_4', 'Operator_queue')
         self.queue_5 = toolbox.Queue('Queue_5', 'Operator_queue')
-        self.hrv_operator_list = [toolbox.Operator('HO{}'.format(o+1), 'Harvesting') for o in range(0, int(self.hrv_machine_num))]
-        self.hrv_machine_list = [toolbox.Machine('HM{}'.format(m+1), 'Harvesting') for m in range(0, int(self.hrv_operator_num))]
-        self.mfg_operator_list = [toolbox.Operator('PO{}'.format(o+1), 'Processing') for o in range(0, int(self.mfg_machine_num))]
-        self.mfg_machine_list = [toolbox.Machine('PM{}'.format(m+1), 'Processing') for m in range(0, int(self.mfg_operator_num))]
+        self.hrv_operator_list = [toolbox.Operator('HO{}'.format(o+1), 'Harvesting') for o in range(0, int(self.hrv_operator_num))]
+        self.hrv_machine_list = [toolbox.Machine('HM{}'.format(m+1), 'Harvesting') for m in range(0, int(self.hrv_machine_num))]
+        self.mfg_operator_list = [toolbox.Operator('PO{}'.format(o+1), 'Processing') for o in range(0, int(self.mfg_operator_num))]
+        self.mfg_machine_list = [toolbox.Machine('PM{}'.format(m+1), 'Processing') for m in range(0, int(self.mfg_machine_num))]
         #self.QC_operator_list = [toolbox.Operator('QO{}'.format(q+1), q+1, 'QC') for q in range(0, int(self.QC_Operators_Count))] 
         self.QC_machine = toolbox.Machine('QC', 'QC')
         self.Finish_stack = toolbox.Machine('Finish_stack', 'Finish_stack')
@@ -183,7 +185,8 @@ class Environment():
         """
         This is the simulation of the factory.
         """
-        output_file = 'results/Event_information_group_{}.csv'.format(self.group_num)
+        output_file = 'results_new/Design_{}/Event_information_group_{}_itera_{}.csv'.format(self.group_num, self.group_num, self.iteration)
+        
         header = ['Clock', 'Event name', 'Event type', 'Event happen time', 'Event place', 'Event machine', 'Event operator', 'Event job', 
                   'Job yield','if_in_rework', 'hrv_operator_state_list', 'mfg_operator_state_list', 'hrv_machine_state_list', 'mfg_machine_state_list', 
                   'q1_state_list', 'q2_state_list', 'q3_state_list', 'q4_state_list', 'q5_state_list', 'job_state_list','event_list','total job count','rework_job_list']
@@ -471,6 +474,8 @@ class Environment():
             this_job.place = this_event.machine
             this_event.machine.Start_Setup(this_job, this_event.operator)
             setup_duration = np.random.randint(1, 3)
+            if this_job in self.queue_4.job_list:
+                self.queue_4.Remove_Job(this_job)
             #schedule next
             next_event = toolbox.Event('Job {} end setup at {}'.format(this_job.name, this_event.machine.name), 'End_Setup', self.clock+setup_duration, this_event.machine, this_event.machine, None, this_job)
             self.add_event(next_event)
@@ -545,6 +550,8 @@ class Environment():
             
         elif this_event.e_type == 'Collect':
             this_job = this_event.job
+            if this_job in self.queue_5.job_list:
+                self.queue_5.Remove_Job(this_job)
             #process event
             if this_job.processing_yield <= 0:
                 this_job.Start_rework(self.clock)
@@ -706,6 +713,7 @@ def translate_into_design(item):
     
 design_file = 'Design_enumerate.csv'
 df_design = pd.read_csv(design_file)
+max_rep = 10
 #for row in range(0,1):
 for row in range(0,len(df_design)):
     Design = []
@@ -713,6 +721,15 @@ for row in range(0,len(df_design)):
         res = translate_into_design(df_design.iloc[row, col])
         Design.append(res)
     group_num = row
-    Env = Environment(Design, group_num)
-    df_this_design = Env.Simulate()
+    #crreate this folder
+    current_directory = os.getcwd()
+    current_directory = os.path.join(current_directory, r'results_new')
+    final_directory = os.path.join(current_directory, r'Design_{}'.format(group_num))
+    if not os.path.exists(final_directory):
+        os.mkdir(final_directory)
+    #os.mkdir(final_directory)
+    
+    for iteration in range(0, max_rep):
+        Env = Environment(Design, group_num, iteration)
+        df_this_design = Env.Simulate()
 #df_this_design.to_csv('Events_info.csv')
